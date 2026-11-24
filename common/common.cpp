@@ -1881,6 +1881,7 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.moe_direct_io     = params.moe_direct_io;
     cparams.moe_slots         = params.moe_slots;
     cparams.layer_readahead   = params.layer_readahead;
+    cparams.layer_resident_mib = params.layer_resident_mib;
     cparams.moe_gguf_path     = params.model.path.c_str();
     cparams.moe_pack_dir      = params.moe_pack_dir.empty() ? nullptr : params.moe_pack_dir.c_str();
     cparams.moe_chunk_max     = params.moe_chunk_max;
@@ -1899,6 +1900,7 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.moe_direct_io     = params.moe_direct_io;
     cparams.moe_slots         = params.moe_slots;
     cparams.layer_readahead   = params.layer_readahead;
+    cparams.layer_resident_mib = params.layer_resident_mib;
     cparams.moe_gguf_path     = params.model.path.c_str();
     cparams.moe_pack_dir      = params.moe_pack_dir.empty() ? nullptr : params.moe_pack_dir.c_str();
     cparams.moe_chunk_max     = params.moe_chunk_max;

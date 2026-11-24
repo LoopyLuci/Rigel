@@ -940,6 +940,158 @@ void llama_prefetch(llama_memory_ranges mr) {
 #endif
 }
 
+static size_t llama_page_size() {
+#if defined(_WIN32)
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return (size_t) info.dwPageSize;
+#elif defined(__linux__) || defined(__APPLE__)
+    const long p = sysconf(_SC_PAGESIZE);
+    return p > 0 ? (size_t) p : 4096;
+#else
+    return 4096;
+#endif
+}
+
+// Whole pages, sorted, with the ranges that touch or overlap merged into one.
+static llama_memory_ranges llama_merge_page_ranges(llama_memory_ranges mr) {
+    const size_t page = llama_page_size();
+    std::sort(mr.begin(), mr.end(), [](const llama_memory_range & a, const llama_memory_range & b) {
+        return (uintptr_t) a.addr < (uintptr_t) b.addr;
+    });
+    llama_memory_ranges out;
+    uintptr_t begin = 0, end = 0;
+    for (const auto & range : mr) {
+        if (!range.addr || range.size == 0) {
+            continue;
+        }
+        const uintptr_t pointer = (uintptr_t) range.addr;
+        const uintptr_t first = pointer / page * page;
+        const uintptr_t last = (pointer + range.size + page - 1) / page * page;
+        if (end && first > end) {
+            out.push_back({ (const void *) begin, end - begin });
+            end = 0;
+        }
+        if (!end) {
+            begin = first;
+        }
+        end = std::max(end, last);
+    }
+    if (end) {
+        out.push_back({ (const void *) begin, end - begin });
+    }
+    return out;
+}
+
+#if defined(_WIN32)
+static bool llama_lock_pages(void * ptr, size_t len) {
+    for (int tries = 1; ; tries++) {
+        if (VirtualLock(ptr, len)) {
+            return true;
+        }
+        if (tries == 2) {
+            LLAMA_LOG_WARN("llama_lock_ranges: VirtualLock of %zu bytes failed: %s\n", len, llama_format_win_err(GetLastError()).c_str());
+            return false;
+        }
+        // a process may lock only what its minimum working set holds: raise it by this much, and a little more
+        SIZE_T min_ws_size, max_ws_size;
+        if (!GetProcessWorkingSetSize(GetCurrentProcess(), &min_ws_size, &max_ws_size)) {
+            LLAMA_LOG_WARN("llama_lock_ranges: GetProcessWorkingSetSize failed: %s\n", llama_format_win_err(GetLastError()).c_str());
+            return false;
+        }
+        const size_t increment = len + 4 * 1048576;
+        if (!SetProcessWorkingSetSize(GetCurrentProcess(), min_ws_size + increment, max_ws_size + increment)) {
+            LLAMA_LOG_WARN("llama_lock_ranges: SetProcessWorkingSetSize failed: %s\n", llama_format_win_err(GetLastError()).c_str());
+            return false;
+        }
+    }
+}
+
+static void llama_unlock_pages(void * ptr, size_t len) {
+    VirtualUnlock(ptr, len);
+}
+#elif defined(_POSIX_MEMLOCK_RANGE)
+static bool llama_lock_pages(void * ptr, size_t len) {
+    if (mlock(ptr, len) == 0) {
+        return true;
+    }
+    LLAMA_LOG_WARN("llama_lock_ranges: mlock of %zu bytes failed: %s (RLIMIT_MEMLOCK may be too low: 'ulimit -l')\n", len, strerror(errno));
+    return false;
+}
+
+static void llama_unlock_pages(void * ptr, size_t len) {
+    munlock(ptr, len);
+}
+#else
+static bool llama_lock_pages(void *, size_t) {
+    LLAMA_LOG_WARN("llama_lock_ranges: locking memory is not supported on this system\n");
+    return false;
+}
+
+static void llama_unlock_pages(void *, size_t) {}
+#endif
+
+llama_memory_ranges llama_lock_ranges(llama_memory_ranges mr, bool * all_locked) {
+    llama_memory_ranges locked;
+    bool all = true;
+    for (const auto & range : llama_merge_page_ranges(std::move(mr))) {
+        if (!llama_lock_pages(const_cast<void *>(range.addr), range.size)) {
+            all = false;
+            break;
+        }
+        locked.push_back(range);
+    }
+    if (all_locked) {
+        *all_locked = all;
+    }
+    return locked;
+}
+
+void llama_unlock_ranges(const llama_memory_ranges & locked) {
+    for (const auto & range : locked) {
+        llama_unlock_pages(const_cast<void *>(range.addr), range.size);
+    }
+}
+
+uint64_t llama_available_memory(uint64_t * total) {
+    if (total) {
+        *total = 0;
+    }
+#if defined(_WIN32)
+    MEMORYSTATUSEX ms;
+    ms.dwLength = sizeof(ms);
+    if (!GlobalMemoryStatusEx(&ms)) {
+        return 0;
+    }
+    if (total) {
+        *total = (uint64_t) ms.ullTotalPhys;
+    }
+    return (uint64_t) ms.ullAvailPhys;
+#elif defined(__linux__)
+    FILE * f = fopen("/proc/meminfo", "r");
+    if (!f) {
+        return 0;
+    }
+    uint64_t mem_total = 0, mem_avail = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        unsigned long long kb = 0;
+        if (sscanf(line, "MemTotal: %llu kB", &kb) == 1) {
+            mem_total = (uint64_t) kb * 1024;
+        } else if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) {
+            mem_avail = (uint64_t) kb * 1024;
+        }
+    }
+    fclose(f);
+    if (total) {
+        *total = mem_total;
+    }
+    return mem_avail;
+#else
+    return 0;
+#endif
+}
+
 size_t llama_path_max() {
     return PATH_MAX;
 }

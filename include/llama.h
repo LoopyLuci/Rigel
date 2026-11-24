@@ -403,6 +403,9 @@ extern "C" {
         int32_t moe_slots;     // total VRAM slots shared across all MoE layers
         // dense layers to read ahead from the memory-mapped file while the current one computes (0 = off)
         int32_t layer_readahead;
+        // MiB of dense layer weights to lock in memory so they are never evicted, the rest streamed from the file: > 0 = that
+        // many MiB, < 0 = what is free minus a margin, 0 = off
+        int32_t layer_resident_mib;
         // GGUF to stream experts from; must outlive the context
         const char * moe_gguf_path;
         // native expert pack dir (experts.bin + native_experts.txt); null = off

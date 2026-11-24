@@ -1930,6 +1930,15 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.layer_readahead = value;
         }
     ).set_env("LLAMA_ARG_LAYER_READAHEAD").set_examples({LLAMA_EXAMPLE_CLI, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_COMPLETION}));
+    add_opt(common_arg(
+        {"--layer-resident-mib"}, "N",
+        "MiB of dense layer weights to lock in memory so they are never evicted, the rest being streamed from the\n"
+        "memory-mapped model file; for a model bigger than the free memory. -1 = what is free minus a margin\n"
+        "(default: 0 = off)",
+        [](common_params & params, int value) {
+            params.layer_resident_mib = value;
+        }
+    ).set_env("LLAMA_ARG_LAYER_RESIDENT_MIB").set_examples({LLAMA_EXAMPLE_CLI, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_COMPLETION}));
 
     add_opt(common_arg(
         {"--moe-profile"},

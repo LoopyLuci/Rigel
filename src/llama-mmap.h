@@ -91,4 +91,13 @@ using llama_memory_ranges = std::vector<llama_memory_range>;
 // Prefetch the host pages covering these memory ranges.
 void llama_prefetch(llama_memory_ranges mr);
 
+// Lock the host pages covering these ranges into physical memory (VirtualLock / mlock) so they are never evicted. Stops at the
+// first range that cannot be locked (`all_locked` tells whether every one was). Returns the page-aligned ranges that are locked;
+// give them to llama_unlock_ranges.
+llama_memory_ranges llama_lock_ranges(llama_memory_ranges mr, bool * all_locked = nullptr);
+void llama_unlock_ranges(const llama_memory_ranges & locked);
+
+// Physical memory that is free or can be reclaimed right now, in bytes (0 when unknown); `total` gets the machine's.
+uint64_t llama_available_memory(uint64_t * total = nullptr);
+
 size_t llama_path_max();

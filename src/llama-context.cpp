@@ -3078,6 +3078,7 @@ llama_context::llama_context(
     cparams.moe_direct_io    = params.moe_direct_io;
     cparams.moe_slots        = params.moe_slots;
     cparams.layer_readahead  = params.layer_readahead;
+    cparams.layer_resident_mib = params.layer_resident_mib;
     cparams.moe_gguf_path    = params.moe_gguf_path;
     cparams.moe_pack_dir     = params.moe_pack_dir;
     cparams.moe_chunk_max    = params.moe_chunk_max;
@@ -4785,22 +4786,30 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
             if (ggml_graph_node(gf, i)->op == GGML_OP_MOE_SLOT_RESOLVE_KICK) { has_ring_nodes = true; break; }
         }
     }
-    if (cparams.layer_readahead > 0 && !layer_ra_tried) {
+    if ((cparams.layer_readahead > 0 || cparams.layer_resident_mib != 0) && !layer_ra_tried) {
         layer_ra_tried = true;
         if (moe_enabled()) {
-            LLAMA_LOG_WARN("%s: --layer-readahead is for dense layers; it is off while paged experts are on\n", __func__);
+            LLAMA_LOG_WARN("%s: --layer-readahead and --layer-resident-mib are for dense layers; they are off while paged experts are on\n", __func__);
         } else {
-            layer_ra = std::make_unique<llama_layer_readahead>(model.tensors_by_name, (int) model.hparams.n_layer(), cparams.layer_readahead);
+            layer_ra = std::make_unique<llama_layer_readahead>(model.tensors_by_name, (int) model.hparams.n_layer(),
+                    std::max(cparams.layer_readahead, 0), cparams.layer_resident_mib);
             if (layer_ra->bytes() == 0) {
-                LLAMA_LOG_WARN("%s: --layer-readahead: no layer weights are in host memory (all offloaded?); off\n", __func__);
+                LLAMA_LOG_WARN("%s: layer read-ahead / resident set: no layer weights are in host memory (all offloaded?); off\n", __func__);
                 layer_ra.reset();
             } else {
-                LLAMA_LOG_INFO("%s: layer read-ahead: %d layers ahead, %.1f MiB of weights in %d layers in host memory\n", __func__,
-                        cparams.layer_readahead, layer_ra->bytes() / 1048576.0, layer_ra->layers_with_host_weights());
+                if (cparams.layer_readahead > 0) {
+                    LLAMA_LOG_INFO("%s: layer read-ahead: %d layers ahead, %.1f MiB of weights in %d layers in host memory\n", __func__,
+                            cparams.layer_readahead, layer_ra->bytes() / 1048576.0, layer_ra->layers_with_host_weights());
+                }
+                if (cparams.layer_resident_mib != 0) {
+                    LLAMA_LOG_INFO("%s: layer resident set: %.1f MiB locked in memory, %d of %d layers, %.1f MiB of weights in host memory\n", __func__,
+                            layer_ra->resident_bytes() / 1048576.0, layer_ra->resident_layers(), layer_ra->layers_with_host_weights(),
+                            layer_ra->bytes() / 1048576.0);
+                }
             }
         }
     }
-    if (layer_ra) {
+    if (layer_ra && cparams.layer_readahead > 0) {
         ggml_backend_sched_set_eval_callback(sched.get(), llama_layer_ra_cb, this);
     }
 
@@ -7414,6 +7423,7 @@ llama_context_params llama_context_default_params() {
         /*.moe_direct_io               =*/ false,
         /*.moe_slots                   =*/ 4096,
         /*.layer_readahead             =*/ 0,
+        /*.layer_resident_mib          =*/ 0,
         /*.moe_gguf_path               =*/ nullptr,
         /*.moe_pack_dir                =*/ nullptr,
         /*.moe_chunk_max               =*/ 64,
