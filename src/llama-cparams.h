@@ -69,6 +69,7 @@ struct llama_cparams {
     void * cb_eval_user_data;
     bool         moe_direct_io = false;
     int32_t      moe_slots     = 4096;
+    int32_t      layer_readahead = 0;
     const char * moe_pack_dir  = nullptr;
     const char * moe_gguf_path = nullptr;
     const char * moe_profile_path = nullptr;

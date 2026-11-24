@@ -1922,6 +1922,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.moe_slots = value;
         }
     ).set_examples({LLAMA_EXAMPLE_CLI, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_COMPLETION}));
+    add_opt(common_arg(
+        {"--layer-readahead"}, "N",
+        "dense layers to read ahead from the memory-mapped model file while the current layer computes; for a model\n"
+        "bigger than the free memory (default: 0 = off)",
+        [](common_params & params, int value) {
+            params.layer_readahead = value;
+        }
+    ).set_env("LLAMA_ARG_LAYER_READAHEAD").set_examples({LLAMA_EXAMPLE_CLI, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_COMPLETION}));
 
     add_opt(common_arg(
         {"--moe-profile"},

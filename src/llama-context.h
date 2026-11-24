@@ -352,6 +352,9 @@ public:
     std::atomic<bool> io_run{false};
     std::vector<std::thread> io_thr;
     bool      moe_ready = false;
+    // dense layer read-ahead (--layer-readahead): see llama-readahead.h
+    std::unique_ptr<class llama_layer_readahead> layer_ra;
+    bool      layer_ra_tried = false;
     bool moe_enabled() const { return moe_ready; }
     int  moe_page(int il, int e);
     int  moe_page_pinned(int il, int e, const bool * pinned);

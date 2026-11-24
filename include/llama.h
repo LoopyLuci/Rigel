@@ -401,6 +401,8 @@ extern "C" {
         // stream routed-expert weights via O_DIRECT into a VRAM slot pool
         bool    moe_direct_io;  // enable sparse MoE direct-IO streaming
         int32_t moe_slots;     // total VRAM slots shared across all MoE layers
+        // dense layers to read ahead from the memory-mapped file while the current one computes (0 = off)
+        int32_t layer_readahead;
         // GGUF to stream experts from; must outlive the context
         const char * moe_gguf_path;
         // native expert pack dir (experts.bin + native_experts.txt); null = off
